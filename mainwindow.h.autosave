@@ -43,11 +43,12 @@ private slots:
     void on_connected();
     void on_error(QAbstractSocket::SocketError error);
     void on_hostFound();
-    void on_searchBtn_clicked();
     void on_readyRead();
-
+    
+    void on_searchBtn_clicked();
+    
     void on_recv_connected();
-    void on_recv_error();
+    void on_recv_error(QAbstractSocket::SocketError error);
 };
 
 #endif // MAINWINDOW_H
