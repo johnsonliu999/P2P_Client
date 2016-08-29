@@ -13,6 +13,8 @@ ServerThd::ServerThd(QObject *parent) :
         exit(-1);
     }
 
+    qDebug() << "File server started succeed at port :" << LISTEN_PORT << thread();
+
     connect(m_pServer, &QTcpServer::newConnection, this, &ServerThd::on_newConnection);
     connect(m_pServer, SIGNAL(acceptError(QAbstractSocket::SocketError)), this, SLOT(on_acceptError(QAbstractSocket::SocketError)));
 }

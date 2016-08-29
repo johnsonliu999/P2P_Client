@@ -16,10 +16,15 @@ TEMPLATE = app
 SOURCES += main.cpp\
         mainwindow.cpp \
     serverthd.cpp \
-    transmitthd.cpp
+    transmitthd.cpp \
+    recvthd.cpp
 
 HEADERS  += mainwindow.h \
     serverthd.h \
-    transmitthd.h
+    transmitthd.h \
+    recvthd.h
 
 FORMS    += mainwindow.ui
+
+DISTFILES += \
+    README

@@ -1,6 +1,9 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include "recvthd.h"
+#include "serverthd.h"
+
 #include <QInputDialog>
 #include <QTcpSocket>
 #include <QErrorMessage>
@@ -12,7 +15,10 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow),
     m_pSocket(new QTcpSocket),
     m_pRecvSocket(new QTcpSocket),
-    m_task(LOG_IN)
+    m_task(LOG_IN),
+    m_recvStatus(SIZE),
+    m_fileSize(0),
+    m_recvBytes(0)
 {
     ui->setupUi(this);
 
@@ -27,8 +33,9 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(m_pSocket, &QTcpSocket::hostFound, this, &MainWindow::on_hostFound);
     connect(m_pSocket, &QTcpSocket::readyRead, this, &MainWindow::on_readyRead);
 
-    connect(m_pRecvSocket, &QTcpSocket::connected, this, &MainWindow::on_recv_connected);
-    connect(m_pRecvSocket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(on_recv_error(QAbstractSocket::SocketError)));
+    connect(m_pRecvSocket, &QTcpSocket::connected, this, &MainWindow::on_recvConnected);
+    connect(m_pRecvSocket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(on_recvError(QAbstractSocket::SocketError)));
+    connect(m_pRecvSocket, &QTcpSocket::readyRead, this, &MainWindow::on_recvReadyRead);
 }
 
 MainWindow::~MainWindow()
@@ -48,7 +55,26 @@ MainWindow::~MainWindow()
     m_pSocket->deleteLater();
     m_pRecvSocket->deleteLater();
 
+    m_pServerThd->quit();
+    m_pServerThd->wait();
+
     delete ui;
+}
+
+inline void MainWindow::recvContent()
+{
+    QDataStream in(m_pRecvSocket);
+    QByteArray bytes;
+    in >> bytes;
+    m_recvBytes += bytes.size();
+    qDebug() << "bytes :" << m_recvBytes;
+    m_file.write(bytes);
+
+    if (m_recvBytes == m_fileSize) {
+        statusBar()->showMessage("Finished recv file", 2);
+        m_file.close();
+        m_recvStatus = SIZE;
+    }
 }
 
 void MainWindow::on_connected()
@@ -66,6 +92,9 @@ void MainWindow::on_connected()
         out << files;
 
         m_pSocket->disconnectFromHost();
+
+        m_pServerThd = new ServerThd(this);
+        m_pServerThd->start();
 
         m_task = LOOK_UP;
 
@@ -99,24 +128,59 @@ void MainWindow::on_searchBtn_clicked()
     if (name == "") return;
 
     ui->availableEdit->clear();
+    ui->sizeEdit->clear();
     ui->nameEdit->setEnabled(false);
+    m_fileSize = 0;
 
     m_pSocket->connectToHost(m_serverIP, PORT);
 }
 
-void MainWindow::on_recv_connected()
+void MainWindow::on_recvConnected()
 {
     qDebug() << "Recv connected";
+    QDataStream out(m_pRecvSocket);
+    out << ui->nameEdit->text();
 }
 
-void MainWindow::on_recv_error(QAbstractSocket::SocketError error)
+void MainWindow::on_recvError(QAbstractSocket::SocketError error)
 {
     qDebug() << "Recv Error :" << m_pRecvSocket->errorString();
 }
 
+void MainWindow::on_recvReadyRead()
+{
+    QDataStream in(m_pRecvSocket);
+    if (m_recvStatus == SIZE) {    
+        in >> m_fileSize;
+
+        qDebug() << "file size :" << m_fileSize;
+        ui->sizeEdit->setText(QString::number(m_fileSize));
+
+        if (!m_fileSize) return;
+        m_recvStatus = CONTENT;
+
+        m_file.setFileName("down/" + ui->nameEdit->text());
+        qDebug() << m_file.fileName();
+        if (!m_file.open(QIODevice::WriteOnly)) {
+            qDebug() << "Open file error" << m_file.errorString();
+            return ;
+        }
+
+        if (m_pRecvSocket->bytesAvailable())
+            recvContent();
+    } else if (m_recvStatus == CONTENT) {
+        recvContent();
+    }
+
+}
+
 void MainWindow::on_readyRead()
 {
-    QString ip = m_pSocket->readAll();
+    QDataStream in(m_pSocket);
+    QString ip;
+    in >> ip;
+    m_pSocket->disconnectFromHost();
+
     if (ip.isNull()) {
         qDebug() << "No Available IP";
         ui->availableEdit->setText("No Available");
@@ -124,6 +188,7 @@ void MainWindow::on_readyRead()
         return;
     }
 
+    ui->availableEdit->setText(ip);
     qDebug() << "Recv Ip : " << ip;
-    m_pRecvSocket.connectToHost(ip, LISTEN_PORT);
+    m_pRecvSocket->connectToHost(ip, LISTEN_PORT);
 }

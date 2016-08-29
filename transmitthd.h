@@ -13,6 +13,9 @@ public:
     TransmitThd(QTcpSocket* pSocket, QObject* parent = 0);
 
 private:
+    void exit(int retcode);
+
+private:
     QTcpSocket* m_pSocket;
     QString m_addrStr;
 

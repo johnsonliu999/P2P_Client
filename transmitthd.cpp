@@ -3,6 +3,8 @@
 #include <QTcpSocket>
 #include <QHostAddress>
 #include <QFile>
+#include <QDir>
+#include <QDataStream>
 
 TransmitThd::TransmitThd(QTcpSocket *pSocket, QObject *parent) :
     QThread(parent),
@@ -11,15 +13,17 @@ TransmitThd::TransmitThd(QTcpSocket *pSocket, QObject *parent) :
 {
     connect(m_pSocket, &QTcpSocket::readyRead, this, &TransmitThd::on_readyRead);
     connect(m_pSocket, &QTcpSocket::disconnected, this, &TransmitThd::on_disconnected);
-    connect(m_pSocket, SIGNAL(error(QAbstractSocket::SocketError), this, SLOT(on_error(QAbstractSocket::SocketError)));
+    connect(m_pSocket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(on_error(QAbstractSocket::SocketError)));
 }
 
 void TransmitThd::on_readyRead()
 {
-    QString fileName = m_pSocket->readAll();
+    QString fileName;
+    QDataStream in(m_pSocket);
+    in >> fileName;
     qDebug() << "Filename :" << fileName;
 
-    QFile f("up/"+fileName);
+    QFile f("up/" + fileName);
     if (!f.exists()) {
         qDebug() << m_addrStr << "file not exist";
         m_pSocket->disconnectFromHost();
@@ -32,18 +36,12 @@ void TransmitThd::on_readyRead()
         exit(-1);
     }
 
-    quint64 fileSize = f.size();
-    if (-1 == m_pSocket->write(fileSize)) {
-        qDebug() << m_addrStr << "Write error :" << m_pSocket->errorString();
-        exit(-1);
-    }
+    QDataStream out(m_pSocket);
+    out << f.size();
 
     while (!f.atEnd()) {
         auto bytes = f.read(1000);
-        if (-1 == m_pSocket->write(bytes)) {
-            qDebug() << m_addrStr << "Write error :" << m_pSocket->errorString();
-            exit(-1);
-        }
+        out << bytes;
     }
 
     f.close();
@@ -60,4 +58,10 @@ void TransmitThd::on_error(QAbstractSocket::SocketError e)
 {
     qDebug() << m_addrStr << "error :" << m_pSocket->errorString();
     exit(-1);
+}
+
+void TransmitThd::exit(int retcode)
+{
+    m_pSocket->moveToThread(this->parent()->thread());
+    exit(retcode);
 }
